@@ -1,8 +1,8 @@
-# Welcome to your CDK TypeScript project
+# Welcome to the Durable Functions Demo
 
-This is a blank project for CDK development with TypeScript.
+This is a proyect were we are going to learn how to use Durable functions.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+The proyect is organized by branches, you can find all the different modules in there. Each branch is explained in the course "Lambda Fundamentals", find all the information there.
 
 ## Useful commands
 

@@ -1,5 +1,8 @@
 {
   "name": "lambda-durable-functions",
+  "author": "Marcia Villalba",
+  "description": "Demo on how to use Durable Functions",
+  "license": "MIT",
   "version": "0.1.0",
   "scripts": {
     "build": "tsc",
