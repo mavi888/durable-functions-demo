@@ -15,12 +15,15 @@
     "@swc/jest": "^0.2.39",
     "@types/jest": "^30",
     "@types/node": "^24.10.1",
-    "jest": "^30",
     "aws-cdk": "2.1142.0",
+    "jest": "^30",
     "tsx": "^4.23.0",
     "typescript": "~7.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1136.0",
+    "@aws-sdk/client-lambda": "^3.1136.0",
+    "@aws-sdk/lib-dynamodb": "^3.1136.0",
     "aws-cdk-lib": "^2.269.0",
     "constructs": "^10.5.0"
   }

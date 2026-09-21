@@ -2,8 +2,13 @@
 import * as cdk from 'aws-cdk-lib/core';
 import { LambdaDurableFunctionsStack } from '../lib/lambda-durable-functions-stack';
 
+// Common prefix applied to all resource names across the stack.
+const RESOURCE_PREFIX = 'ldf';
+
 const app = new cdk.App();
 new LambdaDurableFunctionsStack(app, 'LambdaDurableFunctionsStack', {
+  resourcePrefix: RESOURCE_PREFIX,
+
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,
    * but a single synthesized template can be deployed anywhere. */
