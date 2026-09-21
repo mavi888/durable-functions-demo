@@ -5,3 +5,14 @@ aws lambda invoke \
   --cli-binary-format raw-in-base64-out \
   --payload '{"order_id":"ORD-003","customer_id":"CUST-456","items":[{"item_id":"abc","quantity":1,"price":50}],"total_amount":50}' \
   response.json
+
+# Invoke the Durable function 
+
+aws lambda invoke \
+  --function-name ldf-order-processor:live \
+  --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --durable-execution-name order-ORD-001 \
+  --payload '{"order_id":"ORD-001","customer_id":"CUST-456","items":[{"item_id":"abc","quantity":1,"price":50}],"total_amount":50}' \
+  response.json 
+

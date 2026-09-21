@@ -1,12 +1,10 @@
 import {
-  LambdaClient,
-  InvokeCommand,
-  InvocationType,
-} from "@aws-sdk/client-lambda";
+  withDurableExecution,
+  DurableContext,
+} from "@aws/durable-execution-sdk-js";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 
-const lambdaClient = new LambdaClient({});
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 interface Order {
@@ -26,35 +24,6 @@ interface PaymentResult {
 }
 
 /**
- * Invokes another Lambda function synchronously and returns its parsed JSON payload.
- */
-async function invokeLambda<T>(
-  functionName: string,
-  payload: unknown
-): Promise<T> {
-  const response = await lambdaClient.send(
-    new InvokeCommand({
-      FunctionName: functionName,
-      InvocationType: InvocationType.RequestResponse,
-      Payload: Buffer.from(JSON.stringify(payload)),
-    })
-  );
-
-  if (response.FunctionError) {
-    const errorPayload = response.Payload
-      ? Buffer.from(response.Payload).toString("utf-8")
-      : "unknown error";
-    throw new Error(`Invocation of ${functionName} failed: ${errorPayload}`);
-  }
-
-  const raw = response.Payload
-    ? Buffer.from(response.Payload).toString("utf-8")
-    : "null";
-
-  return JSON.parse(raw) as T;
-}
-
-/**
  * Persists the order in the DynamoDB orders table.
  */
 async function createOrder(order: Order, payment: PaymentResult): Promise<void> {
@@ -68,40 +37,55 @@ async function createOrder(order: Order, payment: PaymentResult): Promise<void> 
         total_amount: order.total_amount,
         payment,
         status: "completed",
+        // created_at is generated inside a step so its value is
+        // checkpointed and stays stable across replays.
         created_at: new Date().toISOString(),
       },
     })
   );
 }
 
-export const handler = async (
-  event: Order
-): Promise<Record<string, unknown>> => {
-  const order = event;
-  const orderId = order.order_id;
+export const handler = withDurableExecution(
+  async (
+    event: Order,
+    context: DurableContext
+  ): Promise<Record<string, unknown>> => {
+    const order = event;
+    const orderId = order.order_id;
 
-  // Step 1: Validate the order (calls order-validate Lambda)
-  const validation = await invokeLambda<ValidationResult>(
-    process.env.VALIDATE_ORDER_FUNCTION as string,
-    order
-  );
+    // Step 1: Validate the order (checkpointed durable invoke)
+    const validation = await context.invoke<Order, ValidationResult>(
+      "validate-order",
+      process.env.VALIDATE_ORDER_FUNCTION as string,
+      order
+    );
 
-  if (!validation.valid) {
-    return { status: "rejected", reason: validation.reason };
-  }
+    context.logger.info("Validation complete", { valid: validation.valid });
 
-  // Step 2: Process payment (calls order-process-payment Lambda)
-  const payment = await invokeLambda<PaymentResult>(
-    process.env.PROCESS_PAYMENT_FUNCTION as string,
-    {
+    if (!validation.valid) {
+      context.logger.warn("Order rejected", { reason: validation.reason });
+      return { status: "rejected", reason: validation.reason };
+    }
+
+    // Step 2: Process payment (checkpointed durable invoke)
+    const payment = await context.invoke<
+      { order_id: string; amount: number; customer_id: string },
+      PaymentResult
+    >("process-payment", process.env.PROCESS_PAYMENT_FUNCTION as string, {
       order_id: order.order_id,
       amount: order.total_amount,
       customer_id: order.customer_id,
-    }
-  );
+    });
 
-  // Step 3: Create order in database
-  await createOrder(order, payment);
+    context.logger.info("Payment complete", { valid: payment.valid });
 
-  return { status: "completed", order_id: orderId };
-};
+
+    // Step 3: Create order in database (checkpointed step)
+    await context.step(
+      "create-order",
+      async () => createOrder(order, payment)
+    );
+
+    return { status: "completed", order_id: orderId };
+  }
+);
