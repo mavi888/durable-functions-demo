@@ -1,5 +1,6 @@
 import {
   BatchResult,
+  CallbackError,
   withDurableExecution,
   DurableContext,
 } from "@aws/durable-execution-sdk-js";
@@ -18,6 +19,14 @@ interface Order {
 interface ValidationResult {
   valid: boolean;
   reason?: string;
+  shippable_within_30_days?: boolean;
+  [key: string]: unknown;
+}
+
+
+interface CustomerResponse {
+  approved?: boolean;
+  [key: string]: unknown;
 }
 
 interface PaymentResult {
@@ -93,6 +102,46 @@ export const handler = withDurableExecution(
         status: "rejected",
         reason: shippingResult?.reason ?? "Shipping not available",
       };
+    }
+
+    // Step 1b: If not shippable within 30 days, ask the customer (human-in-the-loop).
+    // waitForCallback suspends the execution (no compute charges) until an external
+    // system resolves the callback, or the 48-hour timeout expires.
+    if (!shippingResult.shippable_within_30_days) {
+      let customerResponse: CustomerResponse | string;
+      try {
+        customerResponse = await context.waitForCallback<CustomerResponse | string>(
+          "customer-shipping-approval",
+          async (callbackId) => {
+            // In production, this would send an email/SMS with the callbackId.
+            console.log(
+              `Asking customer to approve delayed shipping. Callback ID: ${callbackId}`
+            );
+          },
+          { timeout: { hours: 48 } }
+        );
+      } catch (err) {
+        if (err instanceof CallbackError) {
+          return {
+            status: "cancelled",
+            reason: "Customer did not respond within 48 hours",
+          };
+        }
+        throw err;
+      }
+
+      // The callback result may arrive as a raw JSON string; normalize it.
+      const response: CustomerResponse =
+        typeof customerResponse === "string"
+          ? JSON.parse(customerResponse)
+          : customerResponse;
+
+      if (!response.approved) {
+        return {
+          status: "cancelled",
+          reason: "Customer declined delayed shipping",
+        };
+      }
     }
 
     // Step 2: Process payment (checkpointed durable invoke)

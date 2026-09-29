@@ -37,3 +37,15 @@ aws lambda invoke \
   --durable-execution-name order-ORD-300 \
   --payload '{"order_id":"order-ORD-300","customer_id":"CUST-100","items":[{"item_id":"ITEM-FAST","quantity":1,"price":50}],"total_amount":50}' \
   response.json
+
+# Invoke lambda with callback
+
+aws lambda invoke \
+  --function-name ldf-order-processor:live \
+  --cli-binary-format raw-in-base64-out \
+  --durable-execution-name order-ORD-200 \
+  --invocation-type Event \
+  --payload '{"order_id":"order-ORD-200","customer_id":"CUST-200","items":[{"item_id":"ITEM-BACKORDER","quantity":1,"price":50}],"total_amount":50}' \
+  response.json
+
+  Status: {"approved": true}
