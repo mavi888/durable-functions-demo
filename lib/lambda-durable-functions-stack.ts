@@ -140,6 +140,43 @@ export class LambdaDurableFunctionsStack extends cdk.Stack {
       version: orderProcessorFn.currentVersion,
     });
 
+    // JUST FOR DEMO PURPUSE -------------------------------------
+    // This function intentionally keeps the replay/non-determinism bug
+    // for learning purposes (payment_id generated outside a context.step()).
+    const debugReplayFn = new NodejsFunction(this, 'DebugReplayFunction', {
+      ...commonProps,
+      functionName: `${prefix}-debug-replay`,
+      entry: path.join(__dirname, '..', 'lambda', 'debug-replay', 'index.ts'),
+      durableConfig: {
+        executionTimeout: cdk.Duration.hours(1),
+        retentionPeriod: cdk.Duration.days(7),
+      },
+      // Explicitly manage the log group so it is removed on `cdk destroy`.
+      logGroup: new logs.LogGroup(this, 'DebugReplayLogGroup', {
+        logGroupName:`/aws/lambda/${prefix}-debug-replay`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    // Grant the checkpoint permissions required for durable execution.
+    debugReplayFn.role?.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        'service-role/AWSLambdaBasicDurableExecutionRolePolicy',
+      ),
+    );
+
+    // Alias for the debug-replay durable function (qualified ARN for invoke).
+    const debugReplayAlias = new lambda.Alias(this, 'DebugReplayAlias', {
+      aliasName: 'live',
+      version: debugReplayFn.currentVersion,
+    });
+
+    new cdk.CfnOutput(this, 'DebugReplayAliasArn', {
+      value: debugReplayAlias.functionArn,
+      description: 'Qualified ARN to invoke the durable debug-replay function',
+    });
+
     // OUTPUTS ---------------------------------------------------
     new cdk.CfnOutput(this, 'OrderProcessorFunctionName', {
       value: orderProcessorFn.functionName,
