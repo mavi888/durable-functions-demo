@@ -1,4 +1,5 @@
 import {
+  BatchResult,
   withDurableExecution,
   DurableContext,
 } from "@aws/durable-execution-sdk-js";
@@ -53,18 +54,45 @@ export const handler = withDurableExecution(
     const order = event;
     const orderId = order.order_id;
 
-    // Step 1: Validate the order (checkpointed durable invoke)
-    const validation = await context.invoke<Order, ValidationResult>(
-      "validate-order",
-      process.env.VALIDATE_ORDER_FUNCTION as string,
-      order
-    );
+    // Step 1: Validate the order in parallel - inventory and shipping
+    // Each branch runs in its own child context and invokes a downstream
+    // function through a durable, checkpointed invoke.
 
-    context.logger.info("Validation complete", { valid: validation.valid });
+    const checkInventory = async (ctx: DurableContext) =>
+      ctx.invoke<Order, ValidationResult>(
+        "check-inventory",
+        process.env.VALIDATE_ORDER_FUNCTION as string,
+        order
+      );
 
-    if (!validation.valid) {
-      context.logger.warn("Order rejected", { reason: validation.reason });
-      return { status: "rejected", reason: validation.reason };
+    const checkShipping = async (ctx: DurableContext) =>
+      ctx.invoke<Order, ValidationResult>(
+        "check-shipping",
+        process.env.CHECK_SHIPPING_FUNCTION as string,
+        order
+      );
+
+    const validationResults: BatchResult<ValidationResult> =
+      await context.parallel("validate-order", [checkInventory, checkShipping]);
+
+    const results = validationResults.getResults();
+    const inventoryResult = results[0];
+    const shippingResult = results[1];
+
+    context.logger.info("Validation complete", {
+      inventory_valid: inventoryResult?.valid,
+      shipping_valid: shippingResult?.valid,
+    });
+
+    if (!inventoryResult?.valid) {
+      return { status: "rejected", reason: "Item not in stock" };
+    }
+
+    if (!shippingResult?.valid) {
+      return {
+        status: "rejected",
+        reason: shippingResult?.reason ?? "Shipping not available",
+      };
     }
 
     // Step 2: Process payment (checkpointed durable invoke)

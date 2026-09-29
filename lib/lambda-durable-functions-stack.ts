@@ -73,6 +73,25 @@ export class LambdaDurableFunctionsStack extends cdk.Stack {
       version: validateOrderFn.currentVersion,
     });
 
+    // Lambda that checks shipping availability for the order.
+    const checkShippingFn = new NodejsFunction(this, 'CheckShippingFunction', {
+      ...commonProps,
+      functionName: `${prefix}-order-check-shipping`,
+      entry: path.join(__dirname, '..', 'lambda', 'check-shipping', 'index.ts'),
+      // Explicitly manage the log group so it is removed on `cdk destroy`.
+      logGroup: new logs.LogGroup(this, 'CheckShippingLogGroup', {
+        logGroupName: `/aws/lambda/${prefix}-order-check-shipping`,
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+    });
+
+    // Alias for check-shipping (qualified ARN for durable invoke).
+    const checkShippingAlias = new lambda.Alias(this, 'CheckShippingAlias', {
+      aliasName: 'live',
+      version: checkShippingFn.currentVersion,
+    });
+
     // Lambda that processes the payment.
     const processPaymentFn = new NodejsFunction(this, 'ProcessPaymentFunction', {
       ...commonProps,
@@ -109,6 +128,7 @@ export class LambdaDurableFunctionsStack extends cdk.Stack {
       environment: {
         // Pass qualified alias ARNs so the durable invokes target a version/alias.
         VALIDATE_ORDER_FUNCTION: validateOrderAlias.functionArn,
+        CHECK_SHIPPING_FUNCTION: checkShippingAlias.functionArn,
         PROCESS_PAYMENT_FUNCTION: processPaymentAlias.functionArn,
         ORDERS_TABLE_NAME: ordersTable.tableName,
       },
@@ -128,6 +148,7 @@ export class LambdaDurableFunctionsStack extends cdk.Stack {
 
     // Allow the orchestrator to invoke the downstream functions via their aliases.
     validateOrderAlias.grantInvoke(orderProcessorFn);
+    checkShippingAlias.grantInvoke(orderProcessorFn);
     processPaymentAlias.grantInvoke(orderProcessorFn);
 
     // Allow the orchestrator to write orders to DynamoDB.

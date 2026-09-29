@@ -26,3 +26,14 @@ aws lambda invoke \
   --durable-execution-name order-ORD-DEBUG-1 \
   --payload '{"order_id":"ORD-DEBUG-1"}' \
   response.json 
+
+
+# Invoke durable function with parallel
+
+aws lambda invoke \
+  --function-name ldf-order-processor:live \
+  --cli-binary-format raw-in-base64-out \
+  --invocation-type Event \
+  --durable-execution-name order-ORD-300 \
+  --payload '{"order_id":"order-ORD-300","customer_id":"CUST-100","items":[{"item_id":"ITEM-FAST","quantity":1,"price":50}],"total_amount":50}' \
+  response.json
