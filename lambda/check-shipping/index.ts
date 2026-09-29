@@ -32,7 +32,7 @@ export const handler = async (event: Order): Promise<ShippingResult> => {
     };
   }
 
-  // Simulate a shipping-availability check.
+  // Simulate a shipping-availability check 
   //
   // For testing the human-in-the-loop flow you can drive the estimate from the
   // payload in two ways:
